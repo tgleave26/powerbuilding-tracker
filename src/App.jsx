@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-const SUPABASE_URL = "https://hsaucvigljbppxkxihyw.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzYXVjdmlnbGpicHB4a3hpaHl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDgyNDcsImV4cCI6MjA5NDI4NDI0N30.cQmEowdPoxDn2aATct9U6UyV3lxnTKUUvEYmCI23XhY";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
 const sb = async (path, opts = {}) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
