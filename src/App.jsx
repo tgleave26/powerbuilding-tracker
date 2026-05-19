@@ -5,15 +5,16 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY;
 
 const sb = async (path, opts = {}) => {
+  const { headers: extraHeaders, prefer, ...restOpts } = opts;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
-      Prefer: opts.prefer || "return=representation",
-      ...opts.headers,
+      Prefer: prefer || "return=representation",
+      ...extraHeaders,
     },
-    ...opts,
+    ...restOpts,
   });
   if (!res.ok) throw new Error(await res.text());
   const text = await res.text();
