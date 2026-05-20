@@ -528,6 +528,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("pb_theme") || "light");
+  const saveTimers = useRef({});
 
   // Apply theme variables whenever theme changes
   useEffect(() => {
@@ -562,15 +563,18 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  const onLog = async (key, val) => {
+  const onLog = (key, val) => {
     setLogs(prev => ({ ...prev, [key]: val }));
-    try {
-      await sb("workout_logs", {
-        method: "POST",
-        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-        body: JSON.stringify({ log_key: key, weight: val.weight || null, reps: val.reps || null }),
-      });
-    } catch (e) { console.error(e); }
+    clearTimeout(saveTimers.current[key]);
+    saveTimers.current[key] = setTimeout(async () => {
+      try {
+        await sb("workout_logs?on_conflict=log_key", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify({ log_key: key, weight: val.weight || null, reps: val.reps || null }),
+        });
+      } catch (e) { console.error(e); }
+    }, 600);
   };
 
   return (
