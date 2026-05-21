@@ -308,12 +308,139 @@ function ExerciseCard({ ex, weekIdx, dayId, logs, onLog }) {
   );
 }
 
+function buildWorkoutSummary(day, weekIdx, logs) {
+  const week = PROGRAM.weeks[weekIdx];
+  const dayId = `${day.id}_w${weekIdx}`;
+  const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  const lines = [];
+  lines.push(`Powerbuilding — ${week.label} — ${day.name}${day.focus ? ` (${day.focus})` : ""}`);
+  lines.push(`Phase: ${week.phase}`);
+  lines.push(`Date: ${date}`);
+  lines.push("");
+
+  day.exercises.forEach(ex => {
+    const sets = [];
+
+    if (ex.isMain) {
+      const heavy = logs[`${dayId}_${ex.id}_heavy_0`];
+      if (heavy?.weight && heavy?.reps) {
+        sets.push(`- Heavy set: ${heavy.weight} lbs × ${heavy.reps} reps`);
+      }
+    }
+
+    let setNum = 1;
+    for (let i = 0; i < 15; i++) {
+      const s = logs[`${dayId}_${ex.id}_work_${i}`];
+      if (s?.weight && s?.reps) {
+        sets.push(`- Set ${setNum}: ${s.weight} lbs × ${s.reps} reps`);
+        setNum++;
+      }
+    }
+
+    if (sets.length === 0) return; // skip exercises with no logged sets
+
+    lines.push(ex.name);
+    sets.forEach(s => lines.push(s));
+    lines.push("");
+  });
+
+  return lines.join("\n").trimEnd();
+}
+
+function countLoggedSets(day, weekIdx, logs) {
+  const dayId = `${day.id}_w${weekIdx}`;
+  let n = 0;
+  day.exercises.forEach(ex => {
+    if (ex.isMain) {
+      const h = logs[`${dayId}_${ex.id}_heavy_0`];
+      if (h?.weight && h?.reps) n++;
+    }
+    for (let i = 0; i < 15; i++) {
+      const s = logs[`${dayId}_${ex.id}_work_${i}`];
+      if (s?.weight && s?.reps) n++;
+    }
+  });
+  return n;
+}
+
+function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
+  const week = PROGRAM.weeks[weekIdx];
+  const [email, setEmail] = useState(() => localStorage.getItem("pb_email") || "trevor.gleave@gmail.com");
+  const [copied, setCopied] = useState(false);
+  const summary = buildWorkoutSummary(day, weekIdx, logs);
+  const setsLogged = countLoggedSets(day, weekIdx, logs);
+
+  const subject = `Workout Log — ${week.label} — ${day.name}`;
+  const mailtoLink = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(summary)}`;
+
+  const onEmailChange = (v) => {
+    setEmail(v);
+    localStorage.setItem("pb_email", v);
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) { console.error(e); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999, padding: "1rem" }}>
+      <div style={{ background: "var(--bg-primary)", borderRadius: 16, padding: "1.25rem", width: "100%", maxWidth: 460, maxHeight: "90vh", display: "flex", flexDirection: "column", border: "0.5px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <div>
+            <div style={{ fontWeight: 500, fontSize: 16, color: "var(--text-primary)" }}>Workout complete</div>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+              {setsLogged} set{setsLogged === 1 ? "" : "s"} logged · {day.name}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22, lineHeight: 1 }}>×</button>
+        </div>
+
+        <div style={{ marginBottom: "0.75rem" }}>
+          <label style={{ fontSize: 11, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Send to</label>
+          <input type="email" value={email} onChange={e => onEmailChange(e.target.value)}
+            placeholder="you@example.com"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 14, color: "var(--text-primary)" }} />
+        </div>
+
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Preview</div>
+        <textarea readOnly value={summary}
+          style={{ flex: 1, minHeight: 200, padding: "10px 12px", borderRadius: 10, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 12, lineHeight: 1.5, color: "var(--text-primary)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", resize: "vertical", marginBottom: "0.75rem" }} />
+
+        {setsLogged === 0 && (
+          <div style={{ background: "#FFF8E6", border: "0.5px solid #FAC775", borderRadius: 8, padding: "0.5rem 0.75rem", fontSize: 12, color: "#854F0B", marginBottom: "0.75rem" }}>
+            No sets logged yet — log some sets first, then complete the workout.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={copy} disabled={setsLogged === 0}
+            style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: setsLogged === 0 ? "not-allowed" : "pointer", fontSize: 13, color: "var(--text-primary)", fontWeight: 500, opacity: setsLogged === 0 ? 0.5 : 1 }}>
+            {copied ? "Copied!" : "Copy"}
+          </button>
+          <a href={setsLogged === 0 ? undefined : mailtoLink}
+            onClick={e => { if (setsLogged === 0 || !email) e.preventDefault(); }}
+            style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: setsLogged === 0 || !email ? "var(--bg-secondary)" : "#378ADD", cursor: setsLogged === 0 || !email ? "not-allowed" : "pointer", fontSize: 13, color: setsLogged === 0 || !email ? "var(--text-tertiary)" : "#fff", fontWeight: 500, textAlign: "center", textDecoration: "none", display: "inline-block" }}>
+            ✉️ Send Email
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkoutView({ onBack, onTimer, logs, onLog }) {
   const [weekIdx, setWeekIdx] = useState(0);
   const [daySlot, setDaySlot] = useState(0);
+  const [completeOpen, setCompleteOpen] = useState(false);
   const week = PROGRAM.weeks[weekIdx];
   const weekDays = getWeekDays(weekIdx);
   const day = weekDays[daySlot];
+  const loggedCount = countLoggedSets(day, weekIdx, logs);
 
   return (
     <div>
@@ -370,6 +497,21 @@ function WorkoutView({ onBack, onTimer, logs, onLog }) {
         <ExerciseCard key={`${ex.id}-${weekIdx}-${daySlot}`} ex={ex} weekIdx={weekIdx}
           dayId={`${day.id}_w${weekIdx}`} logs={logs} onLog={onLog} />
       ))}
+
+      <button onClick={() => setCompleteOpen(true)} disabled={loggedCount === 0}
+        style={{
+          marginTop: "0.75rem", marginBottom: "1.5rem", width: "100%", padding: "14px 0", borderRadius: 12,
+          border: "none", cursor: loggedCount === 0 ? "not-allowed" : "pointer",
+          background: loggedCount === 0 ? "var(--bg-secondary)" : "#1D9E75",
+          color: loggedCount === 0 ? "var(--text-tertiary)" : "#fff",
+          fontSize: 15, fontWeight: 500,
+        }}>
+        {loggedCount === 0 ? "Log a set to complete workout" : `✓ Complete Workout & Email Summary`}
+      </button>
+
+      {completeOpen && (
+        <CompleteWorkoutModal day={day} weekIdx={weekIdx} logs={logs} onClose={() => setCompleteOpen(false)} />
+      )}
     </div>
   );
 }
