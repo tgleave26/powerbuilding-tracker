@@ -20,7 +20,22 @@ CREATE TABLE workout_logs (
 
 ---
 
-## Step 2: Install and run locally
+## Step 2: Add your Supabase credentials
+
+Create a `.env` file in the root of the project:
+
+```
+VITE_SUPABASE_URL=https://your-project-id.supabase.co
+VITE_SUPABASE_KEY=your-anon-public-key
+```
+
+To find these, go to your Supabase dashboard → **Project Settings** → **API**:
+- **Project URL** → paste as `VITE_SUPABASE_URL`
+- **anon public** key → paste as `VITE_SUPABASE_KEY`
+
+---
+
+## Step 3: Install and run locally
 
 ```bash
 npm install
@@ -31,12 +46,13 @@ Open http://localhost:5173 in your browser.
 
 ---
 
-## Step 3: Deploy to Vercel
+## Step 4: Deploy to Vercel
 
 1. Push this folder to a GitHub repo
 2. Go to vercel.com → New Project → Import your repo
 3. Framework preset: **Vite**
-4. Click Deploy — done!
+4. Add the same two environment variables from Step 2 under **Environment Variables**
+5. Click Deploy — done!
 
 ---
 
