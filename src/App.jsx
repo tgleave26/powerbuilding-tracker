@@ -365,19 +365,9 @@ function countLoggedSets(day, weekIdx, logs) {
 }
 
 function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
-  const week = PROGRAM.weeks[weekIdx];
-  const [email, setEmail] = useState(() => localStorage.getItem("pb_email") || "trevor.gleave@gmail.com");
   const [copied, setCopied] = useState(false);
   const summary = buildWorkoutSummary(day, weekIdx, logs);
   const setsLogged = countLoggedSets(day, weekIdx, logs);
-
-  const subject = `Workout Log — ${week.label} — ${day.name}`;
-  const mailtoLink = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(summary)}`;
-
-  const onEmailChange = (v) => {
-    setEmail(v);
-    localStorage.setItem("pb_email", v);
-  };
 
   const copy = async () => {
     try {
@@ -400,13 +390,6 @@ function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
 
-        <div style={{ marginBottom: "0.75rem" }}>
-          <label style={{ fontSize: 11, color: "var(--text-secondary)", display: "block", marginBottom: 4 }}>Send to</label>
-          <input type="email" value={email} onChange={e => onEmailChange(e.target.value)}
-            placeholder="you@example.com"
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 14, color: "var(--text-primary)" }} />
-        </div>
-
         <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Preview</div>
         <textarea readOnly value={summary}
           style={{ flex: 1, minHeight: 200, padding: "10px 12px", borderRadius: 10, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 12, lineHeight: 1.5, color: "var(--text-primary)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", resize: "vertical", marginBottom: "0.75rem" }} />
@@ -417,17 +400,10 @@ function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={copy} disabled={setsLogged === 0}
-            style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: setsLogged === 0 ? "not-allowed" : "pointer", fontSize: 13, color: "var(--text-primary)", fontWeight: 500, opacity: setsLogged === 0 ? 0.5 : 1 }}>
-            {copied ? "Copied!" : "Copy"}
-          </button>
-          <a href={setsLogged === 0 ? undefined : mailtoLink}
-            onClick={e => { if (setsLogged === 0 || !email) e.preventDefault(); }}
-            style={{ flex: 2, padding: "10px 0", borderRadius: 10, border: "none", background: setsLogged === 0 || !email ? "var(--bg-secondary)" : "#378ADD", cursor: setsLogged === 0 || !email ? "not-allowed" : "pointer", fontSize: 13, color: setsLogged === 0 || !email ? "var(--text-tertiary)" : "#fff", fontWeight: 500, textAlign: "center", textDecoration: "none", display: "inline-block" }}>
-            ✉️ Send Email
-          </a>
-        </div>
+        <button onClick={copy} disabled={setsLogged === 0}
+          style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: setsLogged === 0 ? "var(--bg-secondary)" : "#378ADD", cursor: setsLogged === 0 ? "not-allowed" : "pointer", fontSize: 14, color: setsLogged === 0 ? "var(--text-tertiary)" : "#fff", fontWeight: 500 }}>
+          {copied ? "Copied!" : "Copy summary"}
+        </button>
       </div>
     </div>
   );
@@ -506,7 +482,7 @@ function WorkoutView({ onBack, onTimer, logs, onLog }) {
           color: loggedCount === 0 ? "var(--text-tertiary)" : "#fff",
           fontSize: 15, fontWeight: 500,
         }}>
-        {loggedCount === 0 ? "Log a set to complete workout" : `✓ Complete Workout & Email Summary`}
+        {loggedCount === 0 ? "Log a set to complete workout" : `✓ Complete Workout`}
       </button>
 
       {completeOpen && (
