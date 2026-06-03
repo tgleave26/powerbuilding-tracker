@@ -254,7 +254,21 @@ function ExerciseCard({ ex, weekIdx, dayId, logs, onLog }) {
   const key = (type, i) => `${dayId}_${ex.id}_${type}_${i}`;
   const get = (type, i) => logs[key(type, i)] || {};
   const set = (type, i, val) => onLog(key(type, i), val);
-  const prev = (type, i) => logs[key(type, i)]?.weight || null;
+  const prev = (type, i) => {
+    const suffix = `_${ex.id}_${type}_${i}`;
+    let bestWeight = null;
+    let bestWeek = -1;
+    Object.entries(logs).forEach(([k, v]) => {
+      if (!v?.weight) return;
+      if (!k.endsWith(suffix)) return;
+      if (k.startsWith(dayId + "_")) return; // skip current session
+      const m = k.match(/_w(\d+)_/);
+      if (!m) return;
+      const w = parseInt(m[1]);
+      if (w > bestWeek) { bestWeek = w; bestWeight = v.weight; }
+    });
+    return bestWeight;
+  };
 
   const workSets = isMain ? md.work[0] + extra : (ex.sets || 3) + extra;
 
