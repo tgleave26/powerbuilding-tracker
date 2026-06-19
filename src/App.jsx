@@ -423,9 +423,18 @@ function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
   );
 }
 
-function WorkoutView({ onBack, onTimer, logs, onLog }) {
-  const [weekIdx, setWeekIdx] = useState(0);
-  const [daySlot, setDaySlot] = useState(0);
+function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleTheme }) {
+  const [weekIdx, setWeekIdx] = useState(() => {
+    const saved = parseInt(localStorage.getItem("pb_weekIdx"));
+    return isNaN(saved) ? 0 : Math.min(saved, PROGRAM.weeks.length - 1);
+  });
+  const [daySlot, setDaySlot] = useState(() => {
+    const saved = parseInt(localStorage.getItem("pb_daySlot"));
+    return isNaN(saved) ? 0 : Math.min(saved, 4);
+  });
+
+  useEffect(() => { localStorage.setItem("pb_weekIdx", weekIdx); }, [weekIdx]);
+  useEffect(() => { localStorage.setItem("pb_daySlot", daySlot); }, [daySlot]);
   const [completeOpen, setCompleteOpen] = useState(false);
   const week = PROGRAM.weeks[weekIdx];
   const weekDays = getWeekDays(weekIdx);
@@ -434,13 +443,19 @@ function WorkoutView({ onBack, onTimer, logs, onLog }) {
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "1.5rem" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22 }}>←</button>
-        <div>
-          <div style={{ fontWeight: 500, fontSize: 18, color: "var(--text-primary)" }}>Workout</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1.5rem" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 500, fontSize: 18, color: "var(--text-primary)" }}>Powerbuilding</div>
           <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{week.label} · {week.phase}</div>
         </div>
-        <button onClick={onTimer} style={{ marginLeft: "auto", padding: "8px 16px", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
+        <button onClick={toggleTheme} title="Toggle theme"
+          style={{ padding: "8px 10px", borderRadius: 10, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", cursor: "pointer", fontSize: 16, lineHeight: 1 }}>
+          {theme === "light" ? "🌙" : "☀️"}
+        </button>
+        <button onClick={onAnalytics} style={{ padding: "8px 10px", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", fontSize: 16, lineHeight: 1 }} title="Analytics">
+          📊
+        </button>
+        <button onClick={onTimer} style={{ padding: "8px 12px", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
           ⏱ Timer
         </button>
       </div>
@@ -654,7 +669,7 @@ function HomeView({ onWorkout, onAnalytics, theme, toggleTheme }) {
 }
 
 export default function App() {
-  const [view, setView] = useState("home");
+  const [view, setView] = useState("workout");
   const [timer, setTimer] = useState(false);
   const [logs, setLogs] = useState({});
   const [ready, setReady] = useState(false);
@@ -719,8 +734,8 @@ export default function App() {
       {ready && (
         <>
           {view === "home" && <HomeView onWorkout={() => setView("workout")} onAnalytics={() => setView("analytics")} theme={theme} toggleTheme={toggleTheme} />}
-          {view === "workout" && <WorkoutView onBack={() => setView("home")} onTimer={() => setTimer(true)} logs={logs} onLog={onLog} />}
-          {view === "analytics" && <AnalyticsView onBack={() => setView("home")} logs={logs} />}
+          {view === "workout" && <WorkoutView onBack={() => setView("home")} onTimer={() => setTimer(true)} onAnalytics={() => setView("analytics")} logs={logs} onLog={onLog} theme={theme} toggleTheme={toggleTheme} />}
+          {view === "analytics" && <AnalyticsView onBack={() => setView("workout")} logs={logs} />}
         </>
       )}
       {timer && <Timer onClose={() => setTimer(false)} />}
