@@ -50,6 +50,15 @@ function applyTheme(vars) {
   document.body.style.color = vars["--text-primary"];
 }
 
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const PROGRAM = {
   maxes: { squat: 365, bench: 315, deadlift: 405 },
   weeks: [
@@ -159,7 +168,169 @@ const getRepRange = (ex, weekIdx) => {
   return "4–8";
 };
 
-function Timer({ onClose }) {
+// Pool of swappable exercises, organized by muscle group. IDs that match a
+// PROGRAM default (e.g. "squat", "bench", "deadlift") preserve main-lift
+// progression and analytics tracking when selected.
+const EXERCISE_POOL = {
+  Legs: [
+    { id: "squat", name: "Back Squat", isMain: true, mainLift: "squat" },
+    { id: "front_squat", name: "Front Squat", sets: 3, rpe: true },
+    { id: "hack_squat", name: "Hack Squat", sets: 3, rpe: true },
+    { id: "leg_press", name: "Leg Press", sets: 3, rpe: true },
+    { id: "leg_press_single", name: "Single Leg Press", sets: 3, rpe: true },
+    { id: "rdl", name: "RDL", sets: 3, rpe: true },
+    { id: "leg_extension", name: "Leg Extension", sets: 3, rpe: true },
+    { id: "leg_curl", name: "Leg Curl", sets: 3, rpe: true },
+    { id: "hip_abductors", name: "Hip Abductors", sets: 3, rpe: true },
+    { id: "db_step_ups", name: "DB Step-Ups", sets: 3, rpe: true },
+    { id: "walking_lunges", name: "Walking Lunges", sets: 3, rpe: true },
+    { id: "bulgarian_split_squat", name: "Bulgarian Split Squat", sets: 3, rpe: true },
+    { id: "calves", name: "Calves", sets: 3, rpe: true, repRange: "10–15" },
+    { id: "ghd", name: "GHD", sets: 3, rpe: true },
+  ],
+  Chest: [
+    { id: "bench", name: "Flat Barbell Bench", isMain: true, mainLift: "bench" },
+    { id: "incline_bench", name: "Incline Barbell Bench", sets: 3, rpe: true },
+    { id: "cgbench", name: "Close Grip Bench", sets: 3, rpe: true },
+    { id: "incline_db", name: "Incline DB Press", sets: 3, rpe: true },
+    { id: "flat_db", name: "Flat DB Press", sets: 3, rpe: true },
+    { id: "cable_fly", name: "Cable Fly", sets: 3, rpe: true, repRange: "12–15" },
+    { id: "dips", name: "Dips", sets: 3, rpe: true },
+    { id: "pushups", name: "Push-Ups", sets: 3, rpe: true },
+  ],
+  Shoulders: [
+    { id: "ohp", name: "Overhead Press", sets: 3, rpe: true },
+    { id: "db_shoulder_press", name: "DB Shoulder Press", sets: 3, rpe: true },
+    { id: "arnold_press", name: "Arnold Press", sets: 3, rpe: true },
+    { id: "lat_raises", name: "Lateral Raises", sets: 3, rpe: true, repRange: "12–15" },
+    { id: "rear_delt_fly", name: "Rear Delt Fly", sets: 3, rpe: true, repRange: "12–15" },
+    { id: "face_pulls", name: "Face Pulls", sets: 3, rpe: true, repRange: "12–15" },
+  ],
+  Back: [
+    { id: "deadlift", name: "Deadlift", isMain: true, mainLift: "deadlift" },
+    { id: "weighted_pullups", name: "Weighted Pull-Ups", sets: 3, rpe: true },
+    { id: "chinups", name: "Chin-Ups", sets: 3, rpe: true },
+    { id: "lat_pulldown", name: "Lat Pulldown", sets: 3, rpe: true },
+    { id: "cable_row", name: "Cable Row", sets: 3, rpe: true, repRange: "6–8" },
+    { id: "seated_row", name: "Seated Row", sets: 3, rpe: true, repRange: "6–8" },
+    { id: "pendlay_row", name: "Pendlay Row", sets: 3, rpe: true, repRange: "6–8" },
+    { id: "barbell_row", name: "Barbell Row", sets: 3, rpe: true, repRange: "6–8" },
+    { id: "tbar_row", name: "T-Bar Row", sets: 3, rpe: true, repRange: "6–8" },
+  ],
+  Biceps: [
+    { id: "db_curl", name: "DB Curl", sets: 3, rpe: true },
+    { id: "barbell_curl", name: "Barbell Curl", sets: 3, rpe: true },
+    { id: "incline_db_curl", name: "Incline DB Curl", sets: 3, rpe: true },
+    { id: "rope_hammer_curl", name: "Rope Hammer Curls", sets: 3, rpe: true },
+    { id: "preacher_curl", name: "Preacher Curl", sets: 3, rpe: true },
+  ],
+  Triceps: [
+    { id: "skull_crushers", name: "Skull Crushers", sets: 3, rpe: true },
+    { id: "tricep_pushdowns", name: "Cable Tricep Pushdowns", sets: 3, rpe: true },
+    { id: "overhead_tricep_ext", name: "Overhead Tricep Extension", sets: 3, rpe: true },
+  ],
+  Core: [
+    { id: "crunches", name: "Weighted Crunches", sets: 3, rpe: true },
+    { id: "hanging_leg_raise", name: "Hanging Leg Raise", sets: 3, rpe: true },
+    { id: "plank", name: "Plank", sets: 3, rpe: true, repRange: "30–60s" },
+    { id: "cable_woodchopper", name: "Cable Woodchopper", sets: 3, rpe: true },
+  ],
+};
+
+const MUSCLE_GROUPS = Object.keys(EXERCISE_POOL);
+
+function getFullPool(customExercises) {
+  const pool = {};
+  Object.entries(EXERCISE_POOL).forEach(([group, exs]) => { pool[group] = [...exs]; });
+  customExercises.forEach(ex => {
+    if (!pool[ex.muscleGroup]) pool[ex.muscleGroup] = [];
+    pool[ex.muscleGroup].push(ex);
+  });
+  return pool;
+}
+
+function AddExerciseModal({ onClose, onAdd }) {
+  const [name, setName] = useState("");
+  const [group, setGroup] = useState(MUSCLE_GROUPS[0]);
+
+  const save = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const id = `custom_${slug || "exercise"}_${Date.now().toString(36)}`;
+    onAdd({ id, name: trimmed, muscleGroup: group, sets: 3, rpe: true });
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" }}>
+      <div style={{ background: "var(--bg-primary)", borderRadius: 16, padding: "1.25rem", width: "100%", maxWidth: 360, border: "0.5px solid var(--border)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <div style={{ fontWeight: 500, fontSize: 16, color: "var(--text-primary)" }}>Add exercise to pool</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>Exercise name</div>
+        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Cable Crossover"
+          onKeyDown={e => { if (e.key === "Enter") save(); }}
+          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 14, color: "var(--text-primary)", marginBottom: 12, boxSizing: "border-box" }} />
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>Muscle group</div>
+        <select value={group} onChange={e => setGroup(e.target.value)}
+          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "0.5px solid var(--border)", background: "var(--bg-secondary)", fontSize: 14, color: "var(--text-primary)", marginBottom: 16, boxSizing: "border-box" }}>
+          {MUSCLE_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <button onClick={save} disabled={!name.trim()}
+          style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: !name.trim() ? "var(--bg-secondary)" : "#378ADD", cursor: !name.trim() ? "not-allowed" : "pointer", fontSize: 14, color: !name.trim() ? "var(--text-tertiary)" : "#fff", fontWeight: 500 }}>
+          Add to pool
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ExercisePicker({ current, pool, excludeIds = [], onSelect, onAddCustom, variant = "name", placeholder }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const excludeSet = new Set(excludeIds);
+  const flat = Object.values(pool).flat();
+  const currentInPool = current && flat.some(x => x.id === current.id);
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    if (v === "__custom__") { setShowAdd(true); return; }
+    if (current && v === current.id) return;
+    const ex = flat.find(x => x.id === v);
+    if (ex) onSelect(ex);
+  };
+
+  const nameStyle = { fontWeight: 500, fontSize: 15, color: "var(--text-primary)", background: "transparent", border: "none", borderBottom: "1px dashed var(--border-strong)", padding: "0 14px 2px 0", cursor: "pointer", maxWidth: "100%" };
+  const addStyle = { width: "100%", padding: "9px 0", borderRadius: 8, border: "0.5px dashed var(--border)", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--text-secondary)", textAlign: "center" };
+
+  return (
+    <>
+      <select value={current ? current.id : ""} onChange={handleChange} style={variant === "name" ? nameStyle : addStyle}>
+        {!current && <option value="" disabled>{placeholder || "Select exercise…"}</option>}
+        {current && !currentInPool && <option value={current.id}>{current.name}</option>}
+        {Object.entries(pool).map(([group, exs]) => {
+          const options = exs.filter(ex => (current && ex.id === current.id) || !excludeSet.has(ex.id));
+          if (options.length === 0) return null;
+          return (
+            <optgroup label={group} key={group}>
+              {options.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+            </optgroup>
+          );
+        })}
+        <option value="__custom__">+ Add new exercise…</option>
+      </select>
+      {showAdd && (
+        <AddExerciseModal
+          onClose={() => setShowAdd(false)}
+          onAdd={(ex) => { onAddCustom(ex); onSelect(ex); setShowAdd(false); }}
+        />
+      )}
+    </>
+  );
+}
+
+function FloatingTimer() {
+  const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(null);
   const [remaining, setRemaining] = useState(0);
   const [running, setRunning] = useState(false);
@@ -175,52 +346,47 @@ function Timer({ onClose }) {
     return () => clearInterval(ref.current);
   }, [running, remaining]);
 
-  const start = (s) => { setSelected(s); setRemaining(s); setRunning(true); };
+  const start = (s) => { setSelected(s); setRemaining(s); setRunning(true); setOpen(false); };
+  const cancel = () => { setRunning(false); setRemaining(0); setSelected(null); };
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
-  const circ = 2 * Math.PI * 54;
-  const pct = selected ? remaining / selected : 1;
+  const isActive = running || (selected && remaining === 0);
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 999 }}>
-      <div style={{ background: "var(--bg-primary)", borderRadius: 20, padding: "2rem", width: 280, textAlign: "center", border: "0.5px solid var(--border)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-          <span style={{ fontWeight: 500, fontSize: 16, color: "var(--text-primary)" }}>Rest Timer</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22, lineHeight: 1 }}>×</button>
+    <div style={{ position: "fixed", bottom: 20, right: 20, zIndex: 998 }}>
+      {open && (
+        <div style={{ position: "absolute", bottom: 66, right: 0, background: "var(--bg-primary)", border: "0.5px solid var(--border)", borderRadius: 14, padding: "0.75rem", width: 150, boxShadow: "0 4px 20px rgba(0,0,0,0.2)" }}>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 8, fontWeight: 500 }}>Rest Timer</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[90, 180].map(s => (
+              <button key={s} onClick={() => start(s)} style={{
+                padding: "8px 0", borderRadius: 8, cursor: "pointer", fontWeight: 500, fontSize: 13,
+                border: `1.5px solid ${selected === s ? "#378ADD" : "var(--border)"}`,
+                background: selected === s ? "#E6F1FB" : "transparent",
+                color: selected === s ? "#185FA5" : "var(--text-primary)",
+              }}>
+                {s === 90 ? "90s" : "3 min"}
+              </button>
+            ))}
+            {(running || selected) && (
+              <button onClick={cancel} style={{ padding: "6px 0", borderRadius: 8, border: "none", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
-        <svg width="120" height="120" viewBox="0 0 120 120" style={{ display: "block", margin: "0 auto 1.5rem" }}>
-          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" strokeWidth="8" />
-          <circle cx="60" cy="60" r="54" fill="none"
-            stroke={remaining === 0 && selected ? "#1D9E75" : "#378ADD"} strokeWidth="8"
-            strokeDasharray={circ} strokeDashoffset={circ - pct * circ}
-            strokeLinecap="round" transform="rotate(-90 60 60)"
-            style={{ transition: "stroke-dashoffset 1s linear" }} />
-          <text x="60" y="56" textAnchor="middle" fill="var(--text-primary)" fontSize="22" fontWeight="500">
-            {mins}:{String(secs).padStart(2, "0")}
-          </text>
-          {remaining === 0 && selected && (
-            <text x="60" y="76" textAnchor="middle" fill="#1D9E75" fontSize="12">Done!</text>
-          )}
-        </svg>
-        <div style={{ display: "flex", gap: 10 }}>
-          {[90, 180].map(s => (
-            <button key={s} onClick={() => start(s)} style={{
-              flex: 1, padding: "10px 0", borderRadius: 10, cursor: "pointer", fontWeight: 500,
-              border: `2px solid ${selected === s ? "#378ADD" : "var(--border)"}`,
-              background: selected === s ? "#E6F1FB" : "transparent",
-              color: selected === s ? "#185FA5" : "var(--text-primary)",
-            }}>
-              {s === 90 ? "90s" : "3 min"}
-            </button>
-          ))}
-        </div>
-        {running && (
-          <button onClick={() => { setRunning(false); setRemaining(0); setSelected(null); }}
-            style={{ marginTop: 12, width: "100%", padding: "8px 0", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", color: "var(--text-secondary)", fontSize: 13 }}>
-            Cancel
-          </button>
-        )}
-      </div>
+      )}
+      <button onClick={() => setOpen(o => !o)} style={{
+        width: 56, height: 56, borderRadius: 28, cursor: "pointer",
+        background: isActive ? "var(--bg-primary)" : "#378ADD",
+        color: isActive ? (remaining === 0 ? "#1D9E75" : "var(--text-primary)") : "#fff",
+        boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        border: isActive ? "2.5px solid #378ADD" : "none",
+        fontSize: isActive ? 14 : 22, fontWeight: 500,
+      }}>
+        {isActive ? `${mins}:${String(secs).padStart(2, "0")}` : "⏱"}
+      </button>
     </div>
   );
 }
@@ -245,7 +411,7 @@ function SetRow({ setNum, set, onUpdate, suggested, prev }) {
   );
 }
 
-function ExerciseCard({ ex, weekIdx, dayId, logs, onLog }) {
+function ExerciseCard({ ex, weekIdx, dayId, logs, onLog, pool, excludeIds, onSwap, onAddCustom, isExtra, onRemove }) {
   const wk = PROGRAM.weeks[weekIdx];
   const isMain = !!ex.isMain;
   const md = isMain ? wk[ex.mainLift] : null;
@@ -276,16 +442,23 @@ function ExerciseCard({ ex, weekIdx, dayId, logs, onLog }) {
     <div style={{ background: "var(--bg-primary)", border: "0.5px solid var(--border)", borderRadius: 12, padding: "1rem 1.25rem", marginBottom: "0.75rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 500, fontSize: 15, color: "var(--text-primary)" }}>{ex.name}</div>
-          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
+          <ExercisePicker current={ex} pool={pool} excludeIds={excludeIds} onSelect={onSwap} onAddCustom={onAddCustom} variant="name" />
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
             {isMain
               ? `Heavy: ${md.heavy[0]}×${md.heavy[1]} @ ${md.heavy[2]} lbs · Back-off: ${md.work[0]}×${md.work[1]} @ ${md.work[2]} lbs`
               : `${ex.sets || 3} sets · ${getRepRange(ex, weekIdx)} reps · ${getRpe(weekIdx, ex.id)}`}
           </div>
         </div>
-        {isMain && (
-          <span style={{ fontSize: 11, background: "#E6F1FB", color: "#185FA5", padding: "3px 10px", borderRadius: 20, fontWeight: 500, marginLeft: 8, flexShrink: 0 }}>Main Lift</span>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, marginLeft: 8, flexShrink: 0 }}>
+          {isMain && (
+            <span style={{ fontSize: 11, background: "#E6F1FB", color: "#185FA5", padding: "3px 10px", borderRadius: 20, fontWeight: 500 }}>Main Lift</span>
+          )}
+          {isExtra && (
+            <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", fontSize: 11, padding: 0 }}>
+              Remove
+            </button>
+          )}
+        </div>
       </div>
 
       {isMain && (
@@ -322,18 +495,16 @@ function ExerciseCard({ ex, weekIdx, dayId, logs, onLog }) {
   );
 }
 
-function buildWorkoutSummary(day, weekIdx, logs) {
-  const week = PROGRAM.weeks[weekIdx];
-  const dayId = `${day.id}_w${weekIdx}`;
+function buildWorkoutSummary(meta, dayId, exercises, logs) {
   const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
   const lines = [];
-  lines.push(`Powerbuilding — ${week.label} — ${day.name}${day.focus ? ` (${day.focus})` : ""}`);
-  lines.push(`Phase: ${week.phase}`);
+  lines.push(`Powerbuilding — ${meta.weekLabel} — ${meta.dayName}${meta.focus ? ` (${meta.focus})` : ""}`);
+  lines.push(`Phase: ${meta.phase}`);
   lines.push(`Date: ${date}`);
   lines.push("");
 
-  day.exercises.forEach(ex => {
+  exercises.forEach(ex => {
     const sets = [];
 
     if (ex.isMain) {
@@ -362,10 +533,9 @@ function buildWorkoutSummary(day, weekIdx, logs) {
   return lines.join("\n").trimEnd();
 }
 
-function countLoggedSets(day, weekIdx, logs) {
-  const dayId = `${day.id}_w${weekIdx}`;
+function countLoggedSets(dayId, exercises, logs) {
   let n = 0;
-  day.exercises.forEach(ex => {
+  exercises.forEach(ex => {
     if (ex.isMain) {
       const h = logs[`${dayId}_${ex.id}_heavy_0`];
       if (h?.weight && h?.reps) n++;
@@ -378,10 +548,10 @@ function countLoggedSets(day, weekIdx, logs) {
   return n;
 }
 
-function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
+function CompleteWorkoutModal({ meta, dayId, exercises, logs, onClose }) {
   const [copied, setCopied] = useState(false);
-  const summary = buildWorkoutSummary(day, weekIdx, logs);
-  const setsLogged = countLoggedSets(day, weekIdx, logs);
+  const summary = buildWorkoutSummary(meta, dayId, exercises, logs);
+  const setsLogged = countLoggedSets(dayId, exercises, logs);
 
   const copy = async () => {
     try {
@@ -398,7 +568,7 @@ function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
           <div>
             <div style={{ fontWeight: 500, fontSize: 16, color: "var(--text-primary)" }}>Workout complete</div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>
-              {setsLogged} set{setsLogged === 1 ? "" : "s"} logged · {day.name}
+              {setsLogged} set{setsLogged === 1 ? "" : "s"} logged · {meta.dayName}
             </div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", fontSize: 22, lineHeight: 1 }}>×</button>
@@ -423,7 +593,7 @@ function CompleteWorkoutModal({ day, weekIdx, logs, onClose }) {
   );
 }
 
-function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleTheme }) {
+function WorkoutView({ onBack, onAnalytics, logs, onLog, theme, toggleTheme }) {
   const [weekIdx, setWeekIdx] = useState(() => {
     const saved = parseInt(localStorage.getItem("pb_weekIdx"));
     return isNaN(saved) ? 0 : Math.min(saved, PROGRAM.weeks.length - 1);
@@ -436,10 +606,43 @@ function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleT
   useEffect(() => { localStorage.setItem("pb_weekIdx", weekIdx); }, [weekIdx]);
   useEffect(() => { localStorage.setItem("pb_daySlot", daySlot); }, [daySlot]);
   const [completeOpen, setCompleteOpen] = useState(false);
+
+  const [customExercises, setCustomExercises] = useState(() => loadJSON("pb_customExercises", []));
+  const [swaps, setSwaps] = useState(() => loadJSON("pb_swaps", {}));
+  const [extraExercises, setExtraExercises] = useState(() => loadJSON("pb_extraExercises", {}));
+
+  useEffect(() => { localStorage.setItem("pb_customExercises", JSON.stringify(customExercises)); }, [customExercises]);
+  useEffect(() => { localStorage.setItem("pb_swaps", JSON.stringify(swaps)); }, [swaps]);
+  useEffect(() => { localStorage.setItem("pb_extraExercises", JSON.stringify(extraExercises)); }, [extraExercises]);
+
   const week = PROGRAM.weeks[weekIdx];
   const weekDays = getWeekDays(weekIdx);
   const day = weekDays[daySlot];
-  const loggedCount = countLoggedSets(day, weekIdx, logs);
+  const dayId = `${day.id}_w${weekIdx}`;
+
+  const pool = getFullPool(customExercises);
+  const daySwaps = swaps[dayId] || {};
+  const dayExtras = extraExercises[dayId] || [];
+  const baseExercises = day.exercises.map(ex => daySwaps[ex.id] || ex);
+  const allExercises = [...baseExercises, ...dayExtras];
+  const loggedCount = countLoggedSets(dayId, allExercises, logs);
+
+  const handleAddCustom = (ex) => {
+    setCustomExercises(prev => prev.some(e => e.id === ex.id) ? prev : [...prev, ex]);
+  };
+  const handleSwap = (origId, newEx) => {
+    setSwaps(prev => ({ ...prev, [dayId]: { ...(prev[dayId] || {}), [origId]: newEx } }));
+  };
+  const handleSwapExtra = (slotId, newEx) => {
+    setExtraExercises(prev => ({ ...prev, [dayId]: (prev[dayId] || []).map(e => e.slotId === slotId ? { ...newEx, slotId } : e) }));
+  };
+  const handleAddExtra = (newEx) => {
+    const slotId = `extra_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    setExtraExercises(prev => ({ ...prev, [dayId]: [...(prev[dayId] || []), { ...newEx, slotId }] }));
+  };
+  const handleRemoveExtra = (slotId) => {
+    setExtraExercises(prev => ({ ...prev, [dayId]: (prev[dayId] || []).filter(e => e.slotId !== slotId) }));
+  };
 
   return (
     <div>
@@ -454,9 +657,6 @@ function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleT
         </button>
         <button onClick={onAnalytics} style={{ padding: "8px 10px", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", fontSize: 16, lineHeight: 1 }} title="Analytics">
           📊
-        </button>
-        <button onClick={onTimer} style={{ padding: "8px 12px", borderRadius: 10, border: "0.5px solid var(--border)", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}>
-          ⏱ Timer
         </button>
       </div>
 
@@ -498,10 +698,29 @@ function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleT
         </span>
       </div>
 
-      {day.exercises.map(ex => (
-        <ExerciseCard key={`${ex.id}-${weekIdx}-${daySlot}`} ex={ex} weekIdx={weekIdx}
-          dayId={`${day.id}_w${weekIdx}`} logs={logs} onLog={onLog} />
-      ))}
+      {day.exercises.map(origEx => {
+        const ex = daySwaps[origEx.id] || origEx;
+        const excludeIds = allExercises.filter(e => e.id !== ex.id).map(e => e.id);
+        return (
+          <ExerciseCard key={`${origEx.id}-${weekIdx}-${daySlot}`} ex={ex} weekIdx={weekIdx}
+            dayId={dayId} logs={logs} onLog={onLog} pool={pool} excludeIds={excludeIds}
+            onSwap={newEx => handleSwap(origEx.id, newEx)} onAddCustom={handleAddCustom} />
+        );
+      })}
+
+      {dayExtras.map(ex => {
+        const excludeIds = allExercises.filter(e => e.id !== ex.id).map(e => e.id);
+        return (
+          <ExerciseCard key={`${ex.slotId}-${weekIdx}-${daySlot}`} ex={ex} weekIdx={weekIdx}
+            dayId={dayId} logs={logs} onLog={onLog} pool={pool} excludeIds={excludeIds}
+            onSwap={newEx => handleSwapExtra(ex.slotId, newEx)} onAddCustom={handleAddCustom}
+            isExtra onRemove={() => handleRemoveExtra(ex.slotId)} />
+        );
+      })}
+
+      <ExercisePicker current={null} pool={pool} excludeIds={allExercises.map(e => e.id)}
+        onSelect={handleAddExtra} onAddCustom={handleAddCustom} variant="add"
+        placeholder="+ Add exercise to workout" />
 
       <button onClick={() => setCompleteOpen(true)} disabled={loggedCount === 0}
         style={{
@@ -515,7 +734,9 @@ function WorkoutView({ onBack, onTimer, onAnalytics, logs, onLog, theme, toggleT
       </button>
 
       {completeOpen && (
-        <CompleteWorkoutModal day={day} weekIdx={weekIdx} logs={logs} onClose={() => setCompleteOpen(false)} />
+        <CompleteWorkoutModal
+          meta={{ dayName: day.name, focus: day.focus, weekLabel: week.label, phase: week.phase }}
+          dayId={dayId} exercises={allExercises} logs={logs} onClose={() => setCompleteOpen(false)} />
       )}
     </div>
   );
@@ -670,7 +891,6 @@ function HomeView({ onWorkout, onAnalytics, theme, toggleTheme }) {
 
 export default function App() {
   const [view, setView] = useState("workout");
-  const [timer, setTimer] = useState(false);
   const [logs, setLogs] = useState({});
   const [ready, setReady] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -734,11 +954,11 @@ export default function App() {
       {ready && (
         <>
           {view === "home" && <HomeView onWorkout={() => setView("workout")} onAnalytics={() => setView("analytics")} theme={theme} toggleTheme={toggleTheme} />}
-          {view === "workout" && <WorkoutView onBack={() => setView("home")} onTimer={() => setTimer(true)} onAnalytics={() => setView("analytics")} logs={logs} onLog={onLog} theme={theme} toggleTheme={toggleTheme} />}
+          {view === "workout" && <WorkoutView onBack={() => setView("home")} onAnalytics={() => setView("analytics")} logs={logs} onLog={onLog} theme={theme} toggleTheme={toggleTheme} />}
           {view === "analytics" && <AnalyticsView onBack={() => setView("workout")} logs={logs} />}
         </>
       )}
-      {timer && <Timer onClose={() => setTimer(false)} />}
+      {ready && view === "workout" && <FloatingTimer />}
     </div>
   );
 }
